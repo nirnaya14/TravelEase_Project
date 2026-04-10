@@ -1,0 +1,168 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  Build index.html for a transport booking app called TravelEase.
+  Navbar: logo "✈️ Travel<span>Ease</span>", links Home/My Bookings/Dashboard/Admin (auth-aware via updateNavbar()), Login + Sign Up buttons for guests, Logout for logged-in users. Links hidden/shown based on localStorage "te_user" role.
+  Hero section: floating animated emojis (✈️🚌🚂🚗🛺🏍️) as .hf spans with CSS animation-delay, fade-up class on h1/p/buttons. Tag "🚀 All Transport · One Platform", h1 "Book Any Transport" + gradient span "Anytime, Anywhere", two CTA buttons (Search Now scrolls to #searchSection, Free Sign Up → /register).
+  Search box (.search-box): 6 transport tabs (bus/car/flight/train/auto/bike) with active state, From/To city inputs with <datalist> of 15 Indian cities, swap button (⇄) swaps values, date input, Search button calls doSearch() → /book?type=&from=&to=&date=.
+  Below hero: .transport-stats row (10L+ travelers, 500+ routes, 6 modes, 24/7 support).
+  Features section: 6 .feat-card (Best Prices, Seat Selection, Instant Booking, Secure Payment, Live Tracking, 24/7 Support).
+  Popular Routes: 6 .route-card that call quickSearch(from, to, type) on click showing price.
+  Footer: 4-column grid (brand blurb, Transport links, Company links, Support links), copyright line.
+  JS: selType variable, selectType(), swapCities(), doSearch() validates from/to then navigates, quickSearch() fills inputs + calls doSearch(). updateNavbar() from utils.js.
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>TravelEase — Book Any Transport</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+
+<nav class="navbar">
+  <div class="logo" onclick="location.href='/'">✈️ Travel<span>Ease</span></div>
+  <div class="nav-links" id="navLinks">
+    <a href="/" class="active">Home</a>
+    <a href="/my-bookings" id="myBookingsLink" style="display:none">My Bookings</a>
+    <a href="/dashboard" id="dashboardLink" style="display:none">Dashboard</a>
+    <a href="/admin" id="adminLink" style="display:none">Admin</a>
+    <span id="userGreeting" style="display:none;color:var(--text2);font-size:.82rem;"></span>
+    <a href="/login" id="loginBtn" class="btn btn-ghost btn-sm">Login</a>
+    <a href="/register" id="registerBtn" class="btn btn-primary btn-sm">Sign Up</a>
+    <button onclick="logout('/')" id="logoutBtn" class="btn btn-ghost btn-sm" style="display:none">Logout</button>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-floats">
+    <span class="hf" style="top:15%;left:8%;animation-delay:0s">✈️</span>
+    <span class="hf" style="top:25%;right:10%;animation-delay:1.5s">🚌</span>
+    <span class="hf" style="bottom:30%;left:5%;animation-delay:2.5s">🚂</span>
+    <span class="hf" style="bottom:20%;right:7%;animation-delay:.8s">🚗</span>
+    <span class="hf" style="top:50%;left:3%;animation-delay:2s">🛺</span>
+    <span class="hf" style="top:40%;right:4%;animation-delay:3s">🏍️</span>
+  </div>
+  <div class="hero-tag fade-up">🚀 All Transport · One Platform</div>
+  <h1 class="fade-up d1">Book Any Transport<br><span class="grad">Anytime, Anywhere</span></h1>
+  <p class="fade-up d2">Bus, Car, Flight, Train, Auto, Bike — compare prices and book instantly with seat selection</p>
+  <div class="hero-btns fade-up d3">
+    <button class="btn btn-primary btn-lg" onclick="document.getElementById('searchSection').scrollIntoView({behavior:'smooth'})">🔍 Search Now</button>
+    <a href="/register" class="btn btn-outline btn-lg">✨ Free Sign Up</a>
+  </div>
+
+  <div class="search-box fade-up d4" id="searchSection">
+    <div class="transport-tabs" id="typeTabs">
+      <button class="transport-tab active" data-type="bus" onclick="selectType('bus',this)">🚌 Bus</button>
+      <button class="transport-tab" data-type="car" onclick="selectType('car',this)">🚗 Car</button>
+      <button class="transport-tab" data-type="flight" onclick="selectType('flight',this)">✈️ Flight</button>
+      <button class="transport-tab" data-type="train" onclick="selectType('train',this)">🚂 Train</button>
+      <button class="transport-tab" data-type="auto" onclick="selectType('auto',this)">🛺 Auto</button>
+      <button class="transport-tab" data-type="bike" onclick="selectType('bike',this)">🏍️ Bike</button>
+    </div>
+    <div class="search-row">
+      <div class="form-group" style="flex:1;margin:0">
+        <label>From City</label>
+        <input type="text" id="fromCity" placeholder="e.g. Mumbai" list="cityList" autocomplete="off">
+        <datalist id="cityList">
+          <option value="Mumbai"><option value="Delhi"><option value="Bangalore"><option value="Chennai">
+          <option value="Hyderabad"><option value="Kolkata"><option value="Pune"><option value="Goa">
+          <option value="Ahmedabad"><option value="Jaipur"><option value="Kochi"><option value="Coimbatore">
+          <option value="Mysore"><option value="Agra"><option value="Lucknow">
+        </datalist>
+      </div>
+      <button class="swap-btn" onclick="swapCities()" title="Swap">⇄</button>
+      <div class="form-group" style="flex:1;margin:0">
+        <label>To City</label>
+        <input type="text" id="toCity" placeholder="e.g. Delhi" list="cityList2" autocomplete="off">
+        <datalist id="cityList2">
+          <option value="Mumbai"><option value="Delhi"><option value="Bangalore"><option value="Chennai">
+          <option value="Hyderabad"><option value="Kolkata"><option value="Pune"><option value="Goa">
+        </datalist>
+      </div>
+      <div class="form-group" style="flex:0.6;margin:0">
+        <label>Date</label>
+        <input type="date" id="journeyDate">
+      </div>
+      <button class="btn btn-primary" style="height:46px;padding:0 1.5rem;align-self:flex-end" onclick="doSearch()">🔍 Search</button>
+    </div>
+  </div>
+</section>
+
+<div class="transport-stats">
+  <div class="t-stat"><div class="t-stat-num">10L+</div><div class="t-stat-label">Happy Travelers</div></div>
+  <div class="t-stat"><div class="t-stat-num">500+</div><div class="t-stat-label">Routes</div></div>
+  <div class="t-stat"><div class="t-stat-num">6</div><div class="t-stat-label">Transport Modes</div></div>
+  <div class="t-stat"><div class="t-stat-num">24/7</div><div class="t-stat-label">Support</div></div>
+</div>
+
+<section class="section section-bg">
+  <div class="container">
+    <div class="section-title"><h2>Why Choose TravelEase?</h2><p>Everything you need for a seamless journey</p></div>
+    <div class="features-grid">
+      <div class="feat-card"><div class="feat-icon">💰</div><h3>Best Prices</h3><p>Compare across operators. Get guaranteed lowest fares.</p></div>
+      <div class="feat-card"><div class="feat-icon">💺</div><h3>Seat Selection</h3><p>Pick your exact seat — window, aisle, or anywhere you prefer.</p></div>
+      <div class="feat-card"><div class="feat-icon">⚡</div><h3>Instant Booking</h3><p>Book in under 2 minutes with instant confirmation & PNR.</p></div>
+      <div class="feat-card"><div class="feat-icon">🔒</div><h3>Secure Payment</h3><p>100% secure. UPI, Cards, Net Banking supported.</p></div>
+      <div class="feat-card"><div class="feat-icon">📱</div><h3>Live Tracking</h3><p>Track your booking status in real-time from your dashboard.</p></div>
+      <div class="feat-card"><div class="feat-icon">🎧</div><h3>24/7 Support</h3><p>Always here to help with cancellations, refunds and more.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-title"><h2>Popular Routes</h2><p>Most booked routes this week</p></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem">
+      <div class="route-card" onclick="quickSearch('Mumbai','Pune','bus')"><div><h4>Mumbai → Pune</h4><p style="color:var(--text2);font-size:.8rem">🚌 Bus · 4h 30m · 28 buses</p></div><span style="color:var(--accent);font-weight:700">₹350+</span></div>
+      <div class="route-card" onclick="quickSearch('Delhi','Agra','train')"><div><h4>Delhi → Agra</h4><p style="color:var(--text2);font-size:.8rem">🚂 Train · 2h · 12 trains</p></div><span style="color:var(--accent);font-weight:700">₹450+</span></div>
+      <div class="route-card" onclick="quickSearch('Mumbai','Delhi','flight')"><div><h4>Mumbai → Delhi</h4><p style="color:var(--text2);font-size:.8rem">✈️ Flight · 2h · 8 flights</p></div><span style="color:var(--accent);font-weight:700">₹2500+</span></div>
+      <div class="route-card" onclick="quickSearch('Bangalore','Chennai','train')"><div><h4>Bangalore → Chennai</h4><p style="color:var(--text2);font-size:.8rem">🚂 Train · 4h 30m · 6 trains</p></div><span style="color:var(--accent);font-weight:700">₹1200+</span></div>
+      <div class="route-card" onclick="quickSearch('Chennai','Coimbatore','bus')"><div><h4>Chennai → Coimbatore</h4><p style="color:var(--text2);font-size:.8rem">🚌 Bus · 6h · 15 buses</p></div><span style="color:var(--accent);font-weight:700">₹450+</span></div>
+      <div class="route-card" onclick="quickSearch('Bangalore','Kolkata','flight')"><div><h4>Bangalore → Kolkata</h4><p style="color:var(--text2);font-size:.8rem">✈️ Flight · 3h · 5 flights</p></div><span style="color:var(--accent);font-weight:700">₹4500+</span></div>
+    </div>
+  </div>
+</section>
+
+<footer style="background:var(--bg2);border-top:1px solid var(--border);padding:3rem 1.5rem 1.5rem">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:2.5rem;margin-bottom:2rem">
+      <div><div class="logo" style="margin-bottom:.75rem">✈️ Travel<span>Ease</span></div><p style="color:var(--text2);font-size:.82rem;line-height:1.6">India's most trusted transport booking platform. Bus, Flight, Train, Car, Auto, Bike — all in one place.</p></div>
+      <div><h4 style="margin-bottom:.75rem;font-size:.9rem">Transport</h4><div style="display:flex;flex-direction:column;gap:.4rem"><a href="#" style="color:var(--text2);font-size:.82rem">Bus Booking</a><a href="#" style="color:var(--text2);font-size:.82rem">Flight Booking</a><a href="#" style="color:var(--text2);font-size:.82rem">Train Booking</a><a href="#" style="color:var(--text2);font-size:.82rem">Car Rental</a></div></div>
+      <div><h4 style="margin-bottom:.75rem;font-size:.9rem">Company</h4><div style="display:flex;flex-direction:column;gap:.4rem"><a href="#" style="color:var(--text2);font-size:.82rem">About Us</a><a href="#" style="color:var(--text2);font-size:.82rem">Careers</a><a href="#" style="color:var(--text2);font-size:.82rem">Blog</a></div></div>
+      <div><h4 style="margin-bottom:.75rem;font-size:.9rem">Support</h4><div style="display:flex;flex-direction:column;gap:.4rem"><a href="#" style="color:var(--text2);font-size:.82rem">Help Center</a><a href="#" style="color:var(--text2);font-size:.82rem">Cancellations</a><a href="#" style="color:var(--text2);font-size:.82rem">Refund Policy</a></div></div>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:1rem;text-align:center;color:var(--text3);font-size:.78rem">© 2025 TravelEase Transport Booking System · Final Year Project</div>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+<script src="../js/utils.js"></script>
+<script>
+let selType = 'bus';
+document.getElementById('journeyDate').min = new Date().toISOString().split('T')[0];
+updateNavbar();
+
+function selectType(t, el) {
+  selType = t;
+  document.querySelectorAll('.transport-tab').forEach(b => b.classList.remove('active'));
+  if(el) el.classList.add('active');
+}
+
+function swapCities() {
+  const a = document.getElementById('fromCity'), b = document.getElementById('toCity');
+  [a.value, b.value] = [b.value, a.value];
+}
+
+function doSearch() {
+  const from = document.getElementById('fromCity').value.trim();
+  const to = document.getElementById('toCity').value.trim();
+  const date = document.getElementById('journeyDate').value;
+  if(!from || !to) { toast('Enter From and To cities', 'error'); return; }
+  window.location.href = `/book?type=${selType}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${date}`;
+}
+
+function quickSearch(from, to, type) {
+  document.getElementById('fromCity').value = from;
+  document.getElementById('toCity').value = to;
+  selType = type;
+  document.querySelectorAll('.transport-tab').forEach(b => { b.classList.toggle('active', b.dataset.type === type); });
+  doSearch();
+}
+</script>
+</body></html>

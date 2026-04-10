@@ -1,0 +1,143 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  PROMPT USED TO GENERATE THIS PAGE:
+  Build book.html (search results) for TravelEase.
+  Parse URL params: type, from, to, date using URLSearchParams.
+  Top inline search bar (bg2 background): dynamically build 6 transport-tab buttons (mark active by selType), From input (#srFrom), "→" divider, To input (#srTo), date input (#srDate), Search button → reSearch().
+  reSearch(): update URL to /book?type=&from=&to=&date=.
+  loadResults(): show spinner, fetch apiFetch('/api/transport/search?type=&from=&to=&date='), render resultsHeader with "From → To · TYPE · date" and count, call resultCardHTML(t) for each transport.
+  resultCardHTML(t): .result-card with .rc-type-icon (TCOLOR/TICON maps), transport name + operator, route, "🕐 dep → arr ⏱ dur", amenity badges (.badge.b-purple), seats left, fmtMoney(priceEconomy), rating stars, "💺 Select Seats" button (for bus/train/flight, non-mock) → selectSeats(), "Book Now →" button → bookNow(t).
+  selectSeats(): navigate /seats?id=&type=&from=&to=&date=.
+  bookNow(t): check getUser() else redirect /login, save te_transport + te_journey_date to sessionStorage, navigate /payment.
+  Empty state: 🔍 icon + "No {type}s found" message.
+  Uses TICON/TCOLOR/fmtMoney/fmtDate from utils.js.
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Search Results — TravelEase</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+<nav class="navbar">
+  <div class="logo" onclick="location.href='/'">✈️ Travel<span>Ease</span></div>
+  <div class="nav-links" id="navLinks">
+    <a href="/">Home</a>
+    <a href="/my-bookings" id="myBookingsLink" style="display:none">My Bookings</a>
+    <a href="/dashboard" id="dashboardLink" style="display:none">Dashboard</a>
+    <span id="userGreeting" style="display:none;color:var(--text2);font-size:.82rem;"></span>
+    <a href="/login" id="loginBtn" class="btn btn-ghost btn-sm">Login</a>
+    <button onclick="logout()" id="logoutBtn" class="btn btn-ghost btn-sm" style="display:none">Logout</button>
+  </div>
+</nav>
+
+<div class="page-body">
+  <!-- Inline search bar -->
+  <div style="background:var(--bg2);border-bottom:1px solid var(--border);padding:1rem 1.5rem;">
+    <div class="container" style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+      <div class="transport-tabs" id="typeTabs" style="margin:0"></div>
+      <div class="form-group" style="flex:1;min-width:130px;margin:0"><input type="text" id="srFrom" placeholder="From" style="height:40px;padding:.5rem .85rem"></div>
+      <div style="color:var(--text3);font-size:1.1rem">→</div>
+      <div class="form-group" style="flex:1;min-width:130px;margin:0"><input type="text" id="srTo" placeholder="To" style="height:40px;padding:.5rem .85rem"></div>
+      <div class="form-group" style="margin:0"><input type="date" id="srDate" style="height:40px;padding:.5rem .85rem"></div>
+      <button class="btn btn-primary" style="height:40px" onclick="reSearch()">🔍 Search</button>
+    </div>
+  </div>
+
+  <div class="page-inner">
+    <div id="resultsHeader" style="margin-bottom:1.25rem"></div>
+    <div id="resultsContainer">
+      <div class="loading-center"><div class="spinner"></div><p>Finding best options…</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="../js/utils.js"></script>
+<script>
+updateNavbar();
+const params = new URLSearchParams(window.location.search);
+let selType = params.get('type') || 'bus';
+const fromCity = params.get('from') || '';
+const toCity   = params.get('to')   || '';
+const date     = params.get('date') || '';
+
+// Setup tabs
+const TYPES = [{t:'bus',l:'🚌 Bus'},{t:'car',l:'🚗 Car'},{t:'flight',l:'✈️ Flight'},{t:'train',l:'🚂 Train'},{t:'auto',l:'🛺 Auto'},{t:'bike',l:'🏍️ Bike'}];
+const tabsEl = document.getElementById('typeTabs');
+TYPES.forEach(({t,l}) => {
+  const btn = document.createElement('button');
+  btn.className = 'transport-tab' + (t===selType?' active':'');
+  btn.textContent = l;
+  btn.onclick = () => { selType=t; document.querySelectorAll('.transport-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); reSearch(); };
+  tabsEl.appendChild(btn);
+});
+
+document.getElementById('srFrom').value = fromCity;
+document.getElementById('srTo').value   = toCity;
+document.getElementById('srDate').value = date;
+document.getElementById('srDate').min   = new Date().toISOString().split('T')[0];
+
+function reSearch() {
+  const f=document.getElementById('srFrom').value.trim(), t=document.getElementById('srTo').value.trim(), d=document.getElementById('srDate').value;
+  if(!f||!t){toast('Enter from and to','error');return;}
+  window.location.href=`/book?type=${selType}&from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}&date=${d}`;
+}
+
+async function loadResults() {
+  const hdr = document.getElementById('resultsHeader');
+  hdr.innerHTML = `<h2 style="font-size:1.3rem;font-weight:800">${fromCity} → ${toCity} <span style="font-size:1rem;color:var(--text2);font-weight:500">· ${selType.toUpperCase()}${date?' · '+fmtDate(date):''}</span></h2>`;
+  
+  const r = await apiFetch(`/api/transport/search?type=${selType}&from=${encodeURIComponent(fromCity)}&to=${encodeURIComponent(toCity)}&date=${date}`);
+  const cont = document.getElementById('resultsContainer');
+  if(!r.success || !r.transports.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="e-icon">🔍</div><h3>No ${selType}s found</h3><p>Try different cities or transport type</p></div>`;
+    return;
+  }
+  hdr.innerHTML += `<p style="color:var(--text2);font-size:.85rem;margin-top:.3rem">${r.transports.length} options found</p>`;
+  cont.innerHTML = r.transports.map(t => resultCardHTML(t)).join('');
+}
+
+function resultCardHTML(t) {
+  const needSeats = ['bus','train','flight'].includes(t.type);
+  const isMock = String(t._id).startsWith('mock_');
+  const classes = t.priceBusiness ? `<br><span style="font-size:.72rem;color:var(--text3)">Business: ${fmtMoney(t.priceBusiness)}</span>` : '';
+  const first = t.priceFirst ? `<br><span style="font-size:.72rem;color:var(--text3)">First: ${fmtMoney(t.priceFirst)}</span>` : '';
+  return `
+  <div class="result-card">
+    <div class="rc-type-icon ${TCOLOR[t.type]}">${TICON[t.type]}</div>
+    <div>
+      <div class="rc-name">${t.name} <span class="rc-op">${t.operator}</span></div>
+      <div class="rc-route">${t.from} → ${t.to}</div>
+      <div class="rc-timing">🕐 ${t.departureTime} → ${t.arrivalTime} &nbsp;⏱ ${t.duration}</div>
+      <div class="rc-amenities">${(t.amenities||[]).map(a=>`<span class="badge b-purple">${a}</span>`).join('')}</div>
+    </div>
+    <div class="rc-price">
+      <div class="price-from">from</div>
+      <div class="price-amount">${fmtMoney(t.priceEconomy)}</div>
+      <div class="price-pp">per person${classes}${first}</div>
+      <div class="seats-left">✅ ${t.availableSeats} seats left</div>
+      <div class="rating-stars">⭐ ${t.rating}</div>
+      <div style="margin-top:.65rem;display:flex;flex-direction:column;gap:.35rem">
+        ${needSeats && !isMock ? `<button class="btn btn-outline btn-sm" onclick="selectSeats('${t._id}','${t.type}')">💺 Select Seats</button>` : ''}
+        <button class="btn btn-primary btn-sm" onclick="bookNow(${JSON.stringify(t).replace(/"/g,'&quot;')})">Book Now →</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function selectSeats(id, type) {
+  const f=document.getElementById('srFrom').value||fromCity;
+  const to=document.getElementById('srTo').value||toCity;
+  const d=document.getElementById('srDate').value||date;
+  window.location.href = `/seats?id=${id}&type=${type}&from=${encodeURIComponent(f)}&to=${encodeURIComponent(to)}&date=${d}`;
+}
+
+function bookNow(t) {
+  if(!getUser()){toast('Login to book','warn');setTimeout(()=>location.href='/login',1200);return;}
+  const d=document.getElementById('srDate').value||date||new Date().toISOString().split('T')[0];
+  sessionStorage.setItem('te_transport', JSON.stringify(t));
+  sessionStorage.setItem('te_journey_date', d);
+  window.location.href = '/payment';
+}
+
+loadResults();
+</script>
+</body></html>

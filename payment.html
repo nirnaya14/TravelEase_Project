@@ -1,0 +1,272 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  PROMPT USED TO GENERATE THIS PAGE:
+  Build payment.html for TravelEase. requireLogin() guard. Read te_transport + te_journey_date from sessionStorage in init().
+  Layout: .payment-wrap > .payment-inner, .payment-grid (left steps + right summary sidebar).
+  Make all .pay-step divs active on load (all steps visible). Pre-fill contactEmail from user.email.
+  Step 1 (#step1): .pay-step-hd "1 Passenger Details", #paxForms (form-grid populated by updatePaxForms()).
+  Step 2 (#step2): .pay-step-hd "2 Journey Details", form-grid with: journey date input (pre-fill from sessionStorage), seatClass select (built from transport prices), numPassengers input (1-9, onchange→updatePaxForms()+recalc()), contactEmail input.
+  Step 3 (#step3): .pay-step-hd "3 Payment Method", 2x2 grid of .pay-method-card labels (📱 UPI selected, 💳 Card, 🏦 Net Banking, 💵 Pay Later), selMethod() updates border + shows/hides #upiField/#cardFields/#nbField. UPI: upiId input. Card: card number/expiry/CVV. NetBanking: bank select. Security alert + #errMsg + "🔒 Pay & Confirm Booking" button (#payBtn).
+  Right sidebar (#paySummary): transport card (icon/name/operator/route/timing/selectedSeats), fare breakdown (Base × n, GST 18%, discount ₹0, Total), green confirmation note.
+  init(): parse sessionStorage, rebuild seatClass options, pre-fill seatClass/totalPassengers from transport, call renderTransportCard()+updatePaxForms()+recalc().
+  updatePaxForms(): generate n passenger rows (Name/Age/Gender inputs, show seat number if selectedSeats[i] exists), first passenger pre-fill with user.name.
+  recalc(): compute price × n + 18% tax, update all #sum* spans.
+  doPayment(): validate journey date + all pax names, collect passengers array [{name,age,gender,seatNumber}], POST /api/bookings/create with full payload, then POST /api/payment/mock-success with bookingId, on success save te_last_booking to sessionStorage → navigate /success.
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Payment — TravelEase</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+<nav class="navbar">
+  <div class="logo" onclick="location.href='/'">✈️ Travel<span>Ease</span></div>
+  <div class="nav-links">
+    <a href="/">Home</a>
+    <a href="/my-bookings">My Bookings</a>
+    <span id="userGreeting" style="color:var(--text2);font-size:.82rem;"></span>
+    <button onclick="logout()" class="btn btn-ghost btn-sm">Logout</button>
+  </div>
+</nav>
+<div class="payment-wrap">
+<div class="payment-inner">
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem">
+    <button class="btn btn-ghost btn-sm" onclick="history.back()">← Back</button>
+    <h2 style="font-size:1.3rem;font-weight:800">Secure Payment</h2>
+  </div>
+
+  <div class="payment-grid">
+    <!-- LEFT: Steps -->
+    <div>
+      <!-- Passenger Details -->
+      <div class="pay-step active" id="step1">
+        <div class="pay-step-hd"><div class="pay-step-num">1</div><div class="pay-step-title">Passenger Details</div></div>
+        <div style="margin-top:1rem" id="passengerFields">
+          <div class="form-grid" id="paxForms"></div>
+        </div>
+      </div>
+
+      <!-- Journey Info -->
+      <div class="pay-step" id="step2">
+        <div class="pay-step-hd"><div class="pay-step-num">2</div><div class="pay-step-title">Journey Details</div></div>
+        <div style="margin-top:1rem">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Journey Date</label>
+              <input type="date" id="journeyDate">
+            </div>
+            <div class="form-group">
+              <label>Seat Class</label>
+              <select id="seatClassSel" onchange="recalc()">
+                <option value="Economy">Economy</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>No. of Passengers</label>
+              <input type="number" id="numPassengers" value="1" min="1" max="9" onchange="updatePaxForms(); recalc()">
+            </div>
+            <div class="form-group">
+              <label>Contact Email</label>
+              <input type="email" id="contactEmail" placeholder="booking@email.com">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Payment Method -->
+      <div class="pay-step" id="step3">
+        <div class="pay-step-hd"><div class="pay-step-num">3</div><div class="pay-step-title">Payment Method</div></div>
+        <div style="margin-top:1rem">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+            <label class="pay-method-card" onclick="selMethod(this,'upi')" style="display:flex;align-items:center;gap:.75rem;padding:1rem;background:var(--bg3);border:2px solid var(--accent);border-radius:var(--r-sm);cursor:pointer">
+              <input type="radio" name="pm" value="upi" checked style="accent-color:var(--accent)"> <span style="font-size:.9rem;font-weight:600">📱 UPI</span>
+            </label>
+            <label class="pay-method-card" onclick="selMethod(this,'card')" style="display:flex;align-items:center;gap:.75rem;padding:1rem;background:var(--bg3);border:2px solid var(--border);border-radius:var(--r-sm);cursor:pointer">
+              <input type="radio" name="pm" value="card" style="accent-color:var(--accent)"> <span style="font-size:.9rem;font-weight:600">💳 Card</span>
+            </label>
+            <label class="pay-method-card" onclick="selMethod(this,'netbanking')" style="display:flex;align-items:center;gap:.75rem;padding:1rem;background:var(--bg3);border:2px solid var(--border);border-radius:var(--r-sm);cursor:pointer">
+              <input type="radio" name="pm" value="netbanking" style="accent-color:var(--accent)"> <span style="font-size:.9rem;font-weight:600">🏦 Net Banking</span>
+            </label>
+            <label class="pay-method-card" onclick="selMethod(this,'cash')" style="display:flex;align-items:center;gap:.75rem;padding:1rem;background:var(--bg3);border:2px solid var(--border);border-radius:var(--r-sm);cursor:pointer">
+              <input type="radio" name="pm" value="cash" style="accent-color:var(--accent)"> <span style="font-size:.9rem;font-weight:600">💵 Pay Later</span>
+            </label>
+          </div>
+          <div id="upiField" class="form-group"><label>UPI ID</label><input type="text" id="upiId" placeholder="yourname@paytm"></div>
+          <div id="cardFields" style="display:none">
+            <div class="form-grid">
+              <div class="form-group form-full"><label>Card Number</label><input type="text" placeholder="1234 5678 9012 3456" maxlength="19"></div>
+              <div class="form-group"><label>Expiry</label><input type="text" placeholder="MM/YY" maxlength="5"></div>
+              <div class="form-group"><label>CVV</label><input type="text" placeholder="123" maxlength="3"></div>
+            </div>
+          </div>
+          <div id="nbField" style="display:none" class="form-group">
+            <label>Bank</label>
+            <select><option>State Bank of India</option><option>HDFC Bank</option><option>ICICI Bank</option><option>Axis Bank</option><option>Kotak Mahindra</option></select>
+          </div>
+          <div class="alert alert-info mt-1">🔒 All payments are 100% secure and encrypted</div>
+          <div id="errMsg" class="alert alert-error" style="display:none"></div>
+          <button id="payBtn" class="btn btn-green btn-block btn-lg mt-2" onclick="doPayment()">🔒 Pay & Confirm Booking</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Order Summary -->
+    <div>
+      <div class="pay-summary" id="paySummary">
+        <h3 style="font-size:1rem;font-weight:700;margin-bottom:1rem">Order Summary</h3>
+        <div id="transportCard" style="background:var(--bg3);border-radius:var(--r-sm);padding:1rem;margin-bottom:1rem;font-size:.85rem"></div>
+        <div class="divider"></div>
+        <div class="pay-sum-row"><span>Base Fare</span><span id="sumBase">₹0</span></div>
+        <div class="pay-sum-row"><span>Passengers</span><span id="sumPax">1</span></div>
+        <div class="pay-sum-row"><span>GST (18%)</span><span id="sumTax">₹0</span></div>
+        <div class="pay-sum-row"><span>Discount</span><span style="color:var(--green)" id="sumDisc">—₹0</span></div>
+        <div class="pay-sum-row total"><span>Total Amount</span><span id="sumTotal" style="color:var(--accent)">₹0</span></div>
+        <div style="margin-top:1rem;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:var(--r-sm);padding:.75rem;font-size:.78rem;color:var(--green);text-align:center">✅ Instant confirmation · PNR generated immediately</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="../js/utils.js"></script>
+<script>
+const user = requireLogin();
+if(user) { document.getElementById('userGreeting').textContent='Hi, '+user.name.split(' ')[0]; document.getElementById('contactEmail').value=user.email||''; }
+
+// Make all steps visible/clickable
+document.querySelectorAll('.pay-step').forEach(s=>s.classList.add('active'));
+
+let transport = null;
+let journeyDate = '';
+
+function init() {
+  const td = sessionStorage.getItem('te_transport');
+  journeyDate = sessionStorage.getItem('te_journey_date') || new Date().toISOString().split('T')[0];
+  if(!td) { toast('No transport selected','error'); setTimeout(()=>location.href='/',1500); return; }
+  transport = JSON.parse(td);
+  document.getElementById('journeyDate').value = journeyDate;
+  document.getElementById('journeyDate').min = new Date().toISOString().split('T')[0];
+
+  // Seat class options
+  const sel = document.getElementById('seatClassSel');
+  sel.innerHTML = `<option value="Economy">Economy — ${fmtMoney(transport.priceEconomy)}</option>`;
+  if(transport.priceBusiness) sel.innerHTML += `<option value="Business">Business — ${fmtMoney(transport.priceBusiness)}</option>`;
+  if(transport.priceFirst) sel.innerHTML += `<option value="First Class">First Class — ${fmtMoney(transport.priceFirst)}</option>`;
+
+  // Pre-fill seat class from seat selection
+  if(transport.seatClass) sel.value = transport.seatClass;
+
+  // Passengers count from seat selection
+  if(transport.totalPassengers) document.getElementById('numPassengers').value = transport.totalPassengers;
+
+  renderTransportCard();
+  updatePaxForms();
+  recalc();
+}
+
+function renderTransportCard() {
+  const t = transport;
+  document.getElementById('transportCard').innerHTML = `
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+      <div class="rc-type-icon ${TCOLOR[t.type]}" style="width:40px;height:40px;border-radius:10px;font-size:1.1rem;flex-shrink:0">${TICON[t.type]}</div>
+      <div>
+        <div style="font-weight:700;font-size:.9rem">${t.name}</div>
+        <div style="color:var(--text2);font-size:.75rem">${t.operator}</div>
+      </div>
+    </div>
+    <div style="color:var(--accent);font-weight:700;font-size:.95rem">${t.from} → ${t.to}</div>
+    <div style="color:var(--text2);font-size:.78rem;margin-top:.3rem">🕐 ${t.departureTime} → ${t.arrivalTime} · ⏱ ${t.duration}</div>
+    ${transport.selectedSeats ? `<div style="margin-top:.4rem;font-size:.78rem;color:var(--green)">💺 Seats: ${transport.selectedSeats.join(', ')}</div>` : ''}
+  `;
+}
+
+function updatePaxForms() {
+  const n = parseInt(document.getElementById('numPassengers').value)||1;
+  const container = document.getElementById('paxForms');
+  const preset = transport.selectedSeats || [];
+  container.innerHTML = '';
+  for(let i=0;i<n;i++) {
+    const div = document.createElement('div');
+    div.innerHTML = `
+      <div style="grid-column:1/-1;margin-bottom:.25rem"><strong style="font-size:.82rem">Passenger ${i+1}${preset[i]?' · Seat '+preset[i]:''}</strong></div>
+      <div class="form-group"><label>Full Name</label><input type="text" class="pax-name" placeholder="Passenger ${i+1} name" value="${i===0&&user?user.name:''}"></div>
+      <div class="form-group"><label>Age</label><input type="number" class="pax-age" placeholder="Age" min="1" max="120"></div>
+      <div class="form-group"><label>Gender</label><select class="pax-gender"><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option></select></div>
+    `;
+    div.style.cssText='display:contents';
+    container.appendChild(div);
+  }
+}
+
+function recalc() {
+  const cls = document.getElementById('seatClassSel').value;
+  const n   = parseInt(document.getElementById('numPassengers').value)||1;
+  const price = cls==='Business'?(transport.priceBusiness||transport.priceEconomy):
+                cls==='First Class'?(transport.priceFirst||transport.priceEconomy):transport.priceEconomy;
+  const sub  = price * n;
+  const tax  = Math.round(sub * 0.18);
+  const total = sub + tax;
+  document.getElementById('sumBase').textContent  = fmtMoney(price) + ' × ' + n;
+  document.getElementById('sumPax').textContent   = n;
+  document.getElementById('sumTax').textContent   = fmtMoney(tax);
+  document.getElementById('sumDisc').textContent  = '—₹0';
+  document.getElementById('sumTotal').textContent = fmtMoney(total);
+}
+
+function selMethod(el, type) {
+  document.querySelectorAll('.pay-method-card').forEach(c=>c.style.borderColor='var(--border)');
+  el.style.borderColor='var(--accent)';
+  document.getElementById('upiField').style.display    = type==='upi'?'':'none';
+  document.getElementById('cardFields').style.display  = type==='card'?'':'none';
+  document.getElementById('nbField').style.display     = type==='netbanking'?'':'none';
+}
+
+async function doPayment() {
+  const jDate = document.getElementById('journeyDate').value;
+  if(!jDate) { toast('Select journey date','error'); return; }
+
+  const names = [...document.querySelectorAll('.pax-name')].map(i=>i.value.trim());
+  if(names.some(n=>!n)) { toast('Enter all passenger names','error'); return; }
+
+  const ages    = [...document.querySelectorAll('.pax-age')].map(i=>parseInt(i.value)||25);
+  const genders = [...document.querySelectorAll('.pax-gender')].map(s=>s.value);
+  const preset  = transport.selectedSeats || [];
+  const passengers = names.map((nm,i)=>({ name:nm, age:ages[i], gender:genders[i], seatNumber:preset[i]||(Math.floor(Math.random()*40)+1)+'A' }));
+
+  const cls   = document.getElementById('seatClassSel').value;
+  const n     = parseInt(document.getElementById('numPassengers').value)||1;
+  const price = cls==='Business'?(transport.priceBusiness||transport.priceEconomy):
+                cls==='First Class'?(transport.priceFirst||transport.priceEconomy):transport.priceEconomy;
+  const sub   = price * n;
+  const tax   = Math.round(sub * 0.18);
+  const total = sub + tax;
+  const pm    = document.querySelector('input[name="pm"]:checked')?.value || 'upi';
+
+  const btn = document.getElementById('payBtn');
+  btn.disabled=true; btn.textContent='Processing…';
+
+  // Create booking
+  const bkRes = await apiFetch('/api/bookings/create','POST',{
+    transportType:transport.type, from:transport.from, to:transport.to,
+    journeyDate:jDate, transportName:transport.name, transportNumber:transport.number,
+    departureTime:transport.departureTime, arrivalTime:transport.arrivalTime, duration:transport.duration,
+    seatClass:cls, passengers, totalPassengers:n,
+    pricePerSeat:price, totalAmount:sub, taxes:tax, discount:0, finalAmount:total
+  });
+
+  if(!bkRes.success) { btn.disabled=false; btn.textContent='🔒 Pay & Confirm Booking'; const e=document.getElementById('errMsg'); e.textContent=bkRes.message; e.style.display='flex'; return; }
+
+  // Confirm payment
+  const payRes = await apiFetch('/api/payment/mock-success','POST',{ bookingId:bkRes.booking._id });
+  btn.disabled=false; btn.textContent='🔒 Pay & Confirm Booking';
+
+  if(payRes.success) {
+    sessionStorage.setItem('te_last_booking', JSON.stringify(payRes.booking));
+    window.location.href = '/success';
+  } else {
+    const e=document.getElementById('errMsg'); e.textContent=payRes.message||'Payment failed'; e.style.display='flex';
+  }
+}
+
+init();
+</script>
+</body></html>

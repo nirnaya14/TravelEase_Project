@@ -1,0 +1,44 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  PROMPT USED TO GENERATE THIS PAGE:
+  Build register.html for TravelEase. Centered auth card (max-width 420px).
+  2-column form-grid: Full Name (spans full, id=name), Email (id=email), Phone (id=phone, tel type), Password (spans full, id=pw). Hidden #errMsg div. "Create Account →" button (id=regBtn), link to /login.
+  doRegister(): validate all fields filled + pw.length >= 6, disable button → "Creating...", POST apiFetch('/api/auth/register', {name, email, phone, password}), on success setAuth + toast + redirect /dashboard after 600ms, on failure show errMsg.
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Register — TravelEase</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+<nav class="navbar"><div class="logo" onclick="location.href='/'">✈️ Travel<span>Ease</span></div></nav>
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-logo">✈️ TravelEase</div>
+    <div class="auth-sub">Create your free account</div>
+    <div id="errMsg" class="alert alert-error" style="display:none"></div>
+    <div class="form-grid">
+      <div class="form-group form-full"><label>Full Name</label><input type="text" id="name" placeholder="Your full name"></div>
+      <div class="form-group"><label>Email</label><input type="email" id="email" placeholder="you@example.com"></div>
+      <div class="form-group"><label>Phone</label><input type="tel" id="phone" placeholder="+91 99999 99999"></div>
+      <div class="form-group form-full"><label>Password (min 6 chars)</label><input type="password" id="pw" placeholder="Choose a strong password"></div>
+    </div>
+    <button id="regBtn" class="btn btn-primary btn-block" onclick="doRegister()">Create Account →</button>
+    <p style="text-align:center;font-size:.83rem;color:var(--text2);margin-top:1rem">Already have an account? <a href="/login" class="auth-link">Sign in</a></p>
+  </div>
+</div>
+<script src="../js/utils.js"></script>
+<script>
+async function doRegister() {
+  const name=document.getElementById('name').value.trim();
+  const email=document.getElementById('email').value.trim();
+  const phone=document.getElementById('phone').value.trim();
+  const pw=document.getElementById('pw').value;
+  if(!name||!email||!phone||!pw) return toast('Fill all fields','error');
+  if(pw.length<6) return toast('Password too short','warn');
+  const btn=document.getElementById('regBtn'); btn.disabled=true; btn.textContent='Creating...';
+  const r=await apiFetch('/api/auth/register','POST',{name,email,phone,password:pw});
+  btn.disabled=false; btn.textContent='Create Account →';
+  if(r.success){ setAuth(r.token,r.user); toast('Welcome, '+r.user.name+'!','success'); setTimeout(()=>location.href='/dashboard',600); }
+  else{ const e=document.getElementById('errMsg'); e.textContent=r.message; e.style.display='flex'; }
+}
+</script>
+</body></html>

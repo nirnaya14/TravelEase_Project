@@ -1,0 +1,56 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  PROMPT USED TO GENERATE THIS PAGE:
+  Build admin-login.html for TravelEase. Full viewport dark gradient background (.admin-login-bg: linear-gradient(135deg, #0f172a, #1e293b, #312e81)).
+  .admin-login-box card (white, centered, max-width 400px): .admin-logo-big with 👑 icon div + h2 "Admin Portal" + p "TravelEase Management System".
+  Hidden #errMsg alert. Email field with .input-icon wrapper (📧 span prefix). Password field with .input-icon (🔒 span). Both inputs call doAdminLogin() on Enter.
+  "👑 Access Admin Panel" button (id=loginBtn). Divider. Demo credentials info box (rgba indigo background, shows admin@transport.com / admin123). "← User Login" link to /login.
+  On load: if getUser() && role=admin redirect to /admin.
+  doAdminLogin(): validate fields, disable → "Verifying...", POST apiFetch('/api/auth/admin-login', {email, password}), on success setAuth + toast "Welcome, Admin!" + redirect /admin after 500ms, on failure show errMsg.
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Admin Login — TravelEase</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+<div class="admin-login-bg">
+  <div class="admin-login-box">
+    <div class="admin-logo-big">
+      <div class="icon">👑</div>
+      <h2>Admin Portal</h2>
+      <p>TravelEase Management System</p>
+    </div>
+    <div id="errMsg" class="alert alert-error" style="display:none"></div>
+    <div class="form-group">
+      <label>Admin Email</label>
+      <div class="input-icon"><span class="icon">📧</span><input type="email" id="email" placeholder="admin@transport.com" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <div class="input-icon"><span class="icon">🔒</span><input type="password" id="pw" placeholder="Admin password" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
+    </div>
+    <button id="loginBtn" class="btn btn-primary btn-block" onclick="doAdminLogin()">👑 Access Admin Panel</button>
+    <div class="divider"></div>
+    <div style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);border-radius:var(--r-sm);padding:.75rem;font-size:.78rem;color:var(--text2)">
+      <strong style="color:var(--accent)">Demo credentials:</strong><br>
+      Email: admin@transport.com<br>Password: admin123
+    </div>
+    <p style="text-align:center;font-size:.8rem;color:var(--text3);margin-top:1rem"><a href="/login" class="auth-link">← User Login</a></p>
+  </div>
+</div>
+<script src="../js/utils.js"></script>
+<script>
+const u = getUser();
+if(u && u.role==='admin') window.location.href = '/admin';
+
+async function doAdminLogin() {
+  const email=document.getElementById('email').value.trim();
+  const pw=document.getElementById('pw').value;
+  if(!email||!pw) return toast('Fill all fields','error');
+  const btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='Verifying...';
+  const r=await apiFetch('/api/auth/admin-login','POST',{email,password:pw});
+  btn.disabled=false; btn.textContent='👑 Access Admin Panel';
+  if(r.success){ setAuth(r.token,r.user); toast('Welcome, Admin!','success'); setTimeout(()=>location.href='/admin',500); }
+  else{ const e=document.getElementById('errMsg'); e.textContent=r.message||'Access denied'; e.style.display='flex'; }
+}
+</script>
+</body></html>

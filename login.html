@@ -1,0 +1,50 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  PROMPT USED TO GENERATE THIS PAGE:
+  Build login.html for TravelEase. Centered auth card (max-width 420px).
+  On load: if getUser() exists redirect to /dashboard (or /admin if role=admin).
+  Card: logo "✈️ TravelEase", subtitle "Sign in to your account", hidden #errMsg alert div, email input (id=email), password input (id=pw) — both call doLogin() on Enter key, "Sign In →" button (id=loginBtn) calls doLogin(), link to /register, small link to /admin-login.
+  doLogin(): validate fields, disable button → "Signing in...", POST apiFetch('/api/auth/login', {email, password}), on success call setAuth(r.token, r.user) + toast welcome + redirect to /dashboard or /admin after 500ms, on failure show errMsg div with r.message.
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Login — TravelEase</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+<nav class="navbar"><div class="logo" onclick="location.href='/'">✈️ Travel<span>Ease</span></div></nav>
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-logo">✈️ TravelEase</div>
+    <div class="auth-sub">Sign in to your account</div>
+    <div id="errMsg" class="alert alert-error" style="display:none"></div>
+    <div class="form-group"><label>Email Address</label><input type="email" id="email" placeholder="you@example.com" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="form-group"><label>Password</label><input type="password" id="pw" placeholder="Your password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <button id="loginBtn" class="btn btn-primary btn-block" onclick="doLogin()">Sign In →</button>
+    <div class="auth-divider mt-2"><span>or</span></div>
+    <p style="text-align:center;font-size:.83rem;color:var(--text2)">No account? <a href="/register" class="auth-link">Create one free</a></p>
+    <div class="divider"></div>
+    <p style="text-align:center;font-size:.78rem;color:var(--text3)">Admin? <a href="/admin-login" class="auth-link">Admin Login →</a></p>
+  </div>
+</div>
+<script src="../js/utils.js"></script>
+<script>
+const user = getUser();
+if(user) window.location.href = user.role==='admin' ? '/admin' : '/dashboard';
+
+async function doLogin() {
+  const email = document.getElementById('email').value.trim();
+  const pw = document.getElementById('pw').value;
+  if(!email||!pw) return toast('Fill all fields','error');
+  const btn = document.getElementById('loginBtn');
+  btn.disabled=true; btn.textContent='Signing in...';
+  const r = await apiFetch('/api/auth/login','POST',{email,password:pw});
+  btn.disabled=false; btn.textContent='Sign In →';
+  if(r.success) {
+    setAuth(r.token, r.user);
+    toast('Welcome back, '+r.user.name.split(' ')[0]+'!','success');
+    setTimeout(()=>{ window.location.href = r.user.role==='admin'?'/admin':'/dashboard'; },500);
+  } else {
+    const e=document.getElementById('errMsg'); e.textContent=r.message; e.style.display='flex';
+  }
+}
+</script>
+</body></html>

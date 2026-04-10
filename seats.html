@@ -1,0 +1,256 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  PROMPT USED TO GENERATE THIS PAGE:
+  Build seats.html for TravelEase. requireLogin() guard. Parse URL params: id, type, from, to, date.
+  2-column grid (1fr 340px): left = seat map, right = booking summary card.
+  Left: .seat-map-container with .seat-legend (Available/Selected/Booked/Ladies color swatches), #seatMapArea.
+  loadTransport(): fetch GET /api/transport/{id}, on success call renderTransportSummary() + renderSeatMap() + updatePrice().
+  renderTransportSummary(): set page title, subtitle (from→to · time · date), fill #transportSummary with transport icon+name+operator+route+timing. Rebuild #seatClass select options from priceEconomy/priceBusiness/priceFirst.
+  renderSeatMap(): parse seatLayout "LxR" (e.g. 2x2, 3x2, 3x3). Generate seat grid rows with row number labels, left seats (cols A..L), aisle div, right seats. Seat IDs = "1A","1B" etc. Booked seats (from transport.bookedSeats) get class "booked" + no click. First row = ladies (pink). Flight adds "— Business Class Below —" divider after row 2. Driver cabin header for bus/train.
+  toggleSeat(sn): toggle selected class, max 6 seats, update selectedSeats array, call updateSeatInfo() + updatePrice().
+  updatePrice(): getPrice() based on seatClass value, calc subtotal + 18% tax + total, update all price display spans, enable/disable #proceedBtn.
+  proceedToPayment(): validate seats selected, spread transport data with selectedSeats/seatClass/pricePerSeat/totalAmount/taxes/finalAmount into sessionStorage "te_transport", set "te_journey_date", navigate /payment.
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Select Seats — TravelEase</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+<nav class="navbar">
+  <div class="logo" onclick="location.href='/'">✈️ Travel<span>Ease</span></div>
+  <div class="nav-links">
+    <a href="/" >Home</a>
+    <a href="/my-bookings">My Bookings</a>
+    <span id="userGreeting" style="color:var(--text2);font-size:.82rem;"></span>
+    <button onclick="logout()" class="btn btn-ghost btn-sm">Logout</button>
+  </div>
+</nav>
+<div class="page-body">
+<div class="page-inner" style="max-width:900px">
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+    <button class="btn btn-ghost btn-sm" onclick="history.back()">← Back</button>
+    <div>
+      <h2 style="font-size:1.3rem;font-weight:800" id="seatTitle">Select Your Seats</h2>
+      <p style="color:var(--text2);font-size:.83rem" id="seatSub"></p>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 340px;gap:1.5rem;align-items:start">
+    <!-- Seat Map -->
+    <div>
+      <div class="seat-map-container">
+        <div class="seat-legend">
+          <div class="seat-legend-item"><div class="seat available" style="width:22px;height:22px;border-radius:5px;cursor:default"></div> Available</div>
+          <div class="seat-legend-item"><div class="seat selected" style="width:22px;height:22px;border-radius:5px;cursor:default"></div> Selected</div>
+          <div class="seat-legend-item"><div class="seat booked" style="width:22px;height:22px;border-radius:5px;cursor:default"></div> Booked</div>
+          <div class="seat-legend-item"><div class="seat ladies" style="width:22px;height:22px;border-radius:5px;cursor:default"></div> Ladies</div>
+        </div>
+        <div id="seatMapArea"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Booking Panel -->
+    <div>
+      <div class="card">
+        <div class="card-title" style="margin-bottom:1rem">🎫 Booking Summary</div>
+        <div id="transportSummary" style="background:var(--bg3);border-radius:var(--r-sm);padding:1rem;margin-bottom:1rem;font-size:.85rem"></div>
+
+        <div class="form-group">
+          <label>Seat Class</label>
+          <select id="seatClass" onchange="updatePrice()">
+            <option value="Economy">Economy</option>
+            <option value="Business">Business</option>
+            <option value="First Class">First Class</option>
+          </select>
+        </div>
+
+        <div id="selectedSeatsInfo" class="selected-seats-info" style="display:none">
+          <strong>Selected: </strong><span id="selectedSeatsList">None</span><br>
+          <small style="color:var(--text2)">Click a seat to deselect</small>
+        </div>
+
+        <div class="divider"></div>
+
+        <div style="font-size:.85rem">
+          <div style="display:flex;justify-content:space-between;padding:.3rem 0"><span style="color:var(--text2)">Price per seat</span><span id="pricePerSeat" style="font-weight:700">₹0</span></div>
+          <div style="display:flex;justify-content:space-between;padding:.3rem 0"><span style="color:var(--text2)">Seats selected</span><span id="seatsCount" style="font-weight:700">0</span></div>
+          <div style="display:flex;justify-content:space-between;padding:.3rem 0"><span style="color:var(--text2)">Subtotal</span><span id="subtotal" style="font-weight:700">₹0</span></div>
+          <div style="display:flex;justify-content:space-between;padding:.3rem 0"><span style="color:var(--text2)">Tax (18%)</span><span id="taxAmt" style="font-weight:700">₹0</span></div>
+          <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-top:1px solid var(--border);margin-top:.3rem;font-size:1rem"><strong>Total</strong><strong id="totalAmt" style="color:var(--accent)">₹0</strong></div>
+        </div>
+
+        <button class="btn btn-primary btn-block mt-2" id="proceedBtn" onclick="proceedToPayment()" disabled>
+          Select at least 1 seat
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="../js/utils.js"></script>
+<script>
+requireLogin();
+const user = getUser();
+if(user) { document.getElementById('userGreeting').textContent = 'Hi, '+user.name.split(' ')[0]; }
+
+const params = new URLSearchParams(window.location.search);
+const tId   = params.get('id');
+const tType = params.get('type') || 'bus';
+const from  = params.get('from') || '';
+const to    = params.get('to')   || '';
+const date  = params.get('date') || new Date().toISOString().split('T')[0];
+
+let transport = null;
+let selectedSeats = [];
+
+async function loadTransport() {
+  const r = await apiFetch('/api/transport/' + tId);
+  if(!r.success) { toast('Could not load transport','error'); return; }
+  transport = r.transport;
+  renderTransportSummary();
+  renderSeatMap();
+  updatePrice();
+}
+
+function renderTransportSummary() {
+  const t = transport;
+  document.getElementById('seatTitle').textContent = 'Select Seats — ' + t.name;
+  document.getElementById('seatSub').textContent = t.from + ' → ' + t.to + ' · ' + t.departureTime + ' · ' + fmtDate(date);
+  document.getElementById('transportSummary').innerHTML = `
+    <div style="display:flex;align-items:center;gap:.75rem">
+      <div class="rc-type-icon ${TCOLOR[t.type]}" style="width:42px;height:42px;border-radius:10px;font-size:1.2rem">${TICON[t.type]}</div>
+      <div>
+        <div style="font-weight:700">${t.name}</div>
+        <div style="color:var(--text2);font-size:.78rem">${t.operator} · ${t.number}</div>
+        <div style="color:var(--accent);font-weight:600;font-size:.82rem">${t.from} → ${t.to}</div>
+      </div>
+    </div>
+    <div style="margin-top:.75rem;font-size:.78rem;color:var(--text2)">🕐 ${t.departureTime} → ${t.arrivalTime} · ⏱ ${t.duration}</div>
+  `;
+  // update select options
+  const sel = document.getElementById('seatClass');
+  sel.innerHTML = `<option value="Economy">Economy — ${fmtMoney(t.priceEconomy)}</option>`;
+  if(t.priceBusiness) sel.innerHTML += `<option value="Business">Business — ${fmtMoney(t.priceBusiness)}</option>`;
+  if(t.priceFirst)    sel.innerHTML += `<option value="First Class">First Class — ${fmtMoney(t.priceFirst)}</option>`;
+}
+
+function renderSeatMap() {
+  const t = transport;
+  const layout = t.seatLayout || '2x2';
+  const [L, R] = layout.split('x').map(Number);
+  const totalSeats = t.totalSeats;
+  const booked = t.bookedSeats || [];
+  const rows = Math.ceil(totalSeats / (L + R));
+  const ladiesRows = [1]; // first row ladies
+
+  let html = '';
+  if(tType === 'bus' || tType === 'train') {
+    html += `<div class="driver-seat">🚌 Driver's Cabin</div>`;
+    html += `<div class="seat-door">🚪 Entry/Exit</div>`;
+  } else if(tType === 'flight') {
+    html += `<div class="driver-seat">✈️ Cockpit</div>`;
+  }
+
+  html += '<div class="seat-grid">';
+  // Header
+  html += '<div class="seat-row"><div class="row-label"></div>';
+  for(let c=1;c<=L;c++) html += `<div style="width:36px;text-align:center;font-size:.65rem;color:var(--text3);font-weight:700">${String.fromCharCode(64+c)}</div>`;
+  html += '<div class="aisle"></div>';
+  for(let c=1;c<=R;c++) html += `<div style="width:36px;text-align:center;font-size:.65rem;color:var(--text3);font-weight:700">${String.fromCharCode(64+L+c)}</div>`;
+  html += '</div>';
+
+  let seatNum = 1;
+  for(let row=1; row<=rows && seatNum<=totalSeats; row++) {
+    const isLadies = ladiesRows.includes(row);
+    html += `<div class="seat-row"><div class="row-label">${row}</div>`;
+    for(let c=1; c<=L && seatNum<=totalSeats; c++, seatNum++) {
+      const sn = row + String.fromCharCode(64+c);
+      const isBooked = booked.includes(sn);
+      const cls = isBooked ? 'booked' : isLadies ? 'ladies available' : 'available';
+      html += `<div class="seat ${cls}" id="seat_${sn}" onclick="${isBooked?'':'toggleSeat(\''+sn+'\')'}">
+        <span style="font-size:.58rem">${sn}</span></div>`;
+    }
+    html += '<div class="aisle"></div>';
+    for(let c=1; c<=R && seatNum<=totalSeats; c++, seatNum++) {
+      const sn = row + String.fromCharCode(64+L+c);
+      const isBooked = booked.includes(sn);
+      const cls = isBooked ? 'booked' : 'available';
+      html += `<div class="seat ${cls}" id="seat_${sn}" onclick="${isBooked?'':'toggleSeat(\''+sn+'\')'}">
+        <span style="font-size:.58rem">${sn}</span></div>`;
+    }
+    html += '</div>';
+    if(tType==='flight' && row===2) html += `<div class="seat-row"><div style="padding:.3rem 0;font-size:.7rem;color:var(--text3);text-align:center;width:100%">— Business Class Below —</div></div>`;
+  }
+  html += '</div>';
+  document.getElementById('seatMapArea').innerHTML = html;
+}
+
+function toggleSeat(sn) {
+  const el = document.getElementById('seat_'+sn);
+  if(!el || el.classList.contains('booked')) return;
+  const idx = selectedSeats.indexOf(sn);
+  if(idx >= 0) {
+    selectedSeats.splice(idx,1);
+    el.classList.remove('selected');
+    el.classList.add('available');
+  } else {
+    if(selectedSeats.length >= 6) { toast('Max 6 seats per booking','warn'); return; }
+    selectedSeats.push(sn);
+    el.classList.remove('available','ladies');
+    el.classList.add('selected');
+  }
+  updateSeatInfo();
+  updatePrice();
+}
+
+function updateSeatInfo() {
+  const info = document.getElementById('selectedSeatsInfo');
+  const list = document.getElementById('selectedSeatsList');
+  if(selectedSeats.length) {
+    info.style.display='block';
+    list.textContent = selectedSeats.join(', ');
+  } else {
+    info.style.display='none';
+  }
+}
+
+function getPrice() {
+  if(!transport) return 0;
+  const cls = document.getElementById('seatClass').value;
+  return cls==='Business' ? (transport.priceBusiness||transport.priceEconomy) :
+         cls==='First Class' ? (transport.priceFirst||transport.priceEconomy) :
+         transport.priceEconomy;
+}
+
+function updatePrice() {
+  const price = getPrice();
+  const count = selectedSeats.length || 1;
+  const sub = price * count;
+  const tax = Math.round(sub * 0.18);
+  const total = sub + tax;
+  document.getElementById('pricePerSeat').textContent = fmtMoney(price);
+  document.getElementById('seatsCount').textContent = count;
+  document.getElementById('subtotal').textContent = fmtMoney(sub);
+  document.getElementById('taxAmt').textContent = fmtMoney(tax);
+  document.getElementById('totalAmt').textContent = fmtMoney(total);
+  const btn = document.getElementById('proceedBtn');
+  if(selectedSeats.length > 0) { btn.disabled=false; btn.textContent='Proceed to Payment →'; }
+  else { btn.disabled=true; btn.textContent='Select at least 1 seat'; }
+}
+
+function proceedToPayment() {
+  if(!selectedSeats.length) { toast('Select at least 1 seat','warn'); return; }
+  const price = getPrice();
+  const cls   = document.getElementById('seatClass').value;
+  const count = selectedSeats.length;
+  const sub   = price * count;
+  const tax   = Math.round(sub * 0.18);
+  const data  = { ...transport, selectedSeats, seatClass:cls, pricePerSeat:price, totalPassengers:count, totalAmount:sub, taxes:tax, finalAmount:sub+tax };
+  sessionStorage.setItem('te_transport', JSON.stringify(data));
+  sessionStorage.setItem('te_journey_date', date);
+  window.location.href = '/payment';
+}
+
+loadTransport();
+</script>
+</body></html>

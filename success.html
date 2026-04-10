@@ -1,0 +1,49 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  PROMPT USED TO GENERATE THIS PAGE:
+  Build success.html for TravelEase. Centered .success-wrap > .success-box card.
+  ✅ icon, h2 "Booking Confirmed!", subtitle with 🎉 emoji.
+  #ticketInfo div: read te_last_booking from sessionStorage, if exists render .ticket-row rows for Booking ID (accent color, bold), PNR (cyan, bold), Amount Paid (green, fmtMoney), centered "✅ CONFIRMED" badge (.badge.b-green).
+  If sessionStorage empty: show fallback text "Booking details not found. Check My Bookings page."
+  Two buttons: "📋 View My Bookings" → /my-bookings (primary), "🏠 Back to Home" → / (ghost).
+  After render: sessionStorage.removeItem('te_transport') + removeItem('te_journey_date').
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Booking Confirmed — TravelEase</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+<nav class="navbar"><div class="logo" onclick="location.href='/'">✈️ Travel<span>Ease</span></div></nav>
+<div class="success-wrap">
+  <div class="success-box">
+    <div class="success-icon">✅</div>
+    <h2 style="font-size:1.5rem;font-weight:800;margin-bottom:.5rem">Booking Confirmed!</h2>
+    <p style="color:var(--text2);font-size:.88rem">Your seat is reserved. Have a wonderful journey! 🎉</p>
+    <div class="ticket" id="ticketInfo">
+      <div style="text-align:center;font-size:.75rem;color:var(--text3);margin-bottom:.75rem">✈️ TravelEase — Booking Ticket</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.6rem;margin-top:1rem">
+      <button class="btn btn-primary btn-block" onclick="location.href='/my-bookings'">📋 View My Bookings</button>
+      <button class="btn btn-ghost btn-block" onclick="location.href='/'">🏠 Back to Home</button>
+    </div>
+    <p style="font-size:.75rem;color:var(--text3);text-align:center;margin-top:1rem">A confirmation has been recorded. Keep your Booking ID safe.</p>
+  </div>
+</div>
+<script src="../js/utils.js"></script>
+<script>
+const bk = JSON.parse(sessionStorage.getItem('te_last_booking') || 'null');
+const el = document.getElementById('ticketInfo');
+if(bk) {
+  el.innerHTML = `
+    <div style="text-align:center;font-size:.72rem;color:var(--text3);margin-bottom:.75rem">✈️ TravelEase — Booking Ticket</div>
+    <div class="ticket-row"><label>Booking ID</label><span style="color:var(--accent);font-weight:800">${bk.bookingId}</span></div>
+    <div class="ticket-row"><label>PNR</label><span style="color:var(--cyan);font-weight:700">${bk.pnr}</span></div>
+    <div class="ticket-row"><label>Amount Paid</label><span style="color:var(--green)">${fmtMoney(bk.finalAmount)}</span></div>
+    <div style="text-align:center;margin-top:.75rem"><span class="badge b-green" style="font-size:.8rem;padding:.3rem .75rem">✅ CONFIRMED</span></div>
+  `;
+} else {
+  el.innerHTML = '<div style="text-align:center;color:var(--text2);font-size:.85rem">Booking details not found.<br>Check My Bookings page.</div>';
+}
+sessionStorage.removeItem('te_transport');
+sessionStorage.removeItem('te_journey_date');
+</script>
+</body></html>

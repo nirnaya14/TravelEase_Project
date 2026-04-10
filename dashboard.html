@@ -1,0 +1,110 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  PROMPT USED TO GENERATE THIS PAGE:
+  Build dashboard.html for TravelEase. requireLogin() guard. Set welcomeMsg to "Welcome back, {firstName}! 👋", show userGreeting + logoutBtn.
+  Stats row (.stats-row): 4 .stat-card — 🎫 Total (s-purple), ✅ Confirmed (s-green), ❌ Cancelled (s-red), 💰 Total Spent (s-orange). IDs: st-total, st-conf, st-canc, st-spent.
+  Quick Search card: From (datalist), To (datalist), Type select (6 options), Date input, Search button. quickSearch(): validate + navigate /book?type=&from=&to=&date=.
+  Recent Bookings (.table-wrap): header "📋 Recent Bookings" + "View All →" link to /my-bookings. #recentBkContainer starts with spinner.
+  loadDashboard(): fetch GET /api/bookings/my-bookings, compute stats (filter by bookingStatus, sum finalAmount where paymentStatus=paid), populate stat cards, render last 5 bookings as <table> with columns: Booking ID (accent), Route (from→to bold), Type (TICON), Date (fmtDate), Amount (fmtMoney), Payment badge, Status badge.
+  Empty state: "🎫 No bookings yet" + Search button.
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Dashboard — TravelEase</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+<nav class="navbar">
+  <div class="logo" onclick="location.href='/'">✈️ Travel<span>Ease</span></div>
+  <div class="nav-links" id="navLinks">
+    <a href="/">Home</a>
+    <a href="/my-bookings">My Bookings</a>
+    <a href="/dashboard" class="active">Dashboard</a>
+    <span id="userGreeting" style="display:none;color:var(--text2);font-size:.82rem;"></span>
+    <button onclick="logout()" id="logoutBtn" class="btn btn-ghost btn-sm" style="display:none">Logout</button>
+  </div>
+</nav>
+<div class="dash-wrap">
+<div class="dash-inner">
+  <div style="margin-bottom:2rem">
+    <h2 style="font-size:1.5rem;font-weight:800" id="welcomeMsg">Welcome back! 👋</h2>
+    <p style="color:var(--text2);font-size:.88rem">Here's your travel overview</p>
+  </div>
+
+  <!-- Stats row (horizontal) -->
+  <div class="stats-row" id="userStats">
+    <div class="stat-card s-purple"><div class="stat-icon si-purple">🎫</div><div class="stat-info"><div class="stat-val" id="st-total">—</div><div class="stat-lbl">Total Bookings</div></div></div>
+    <div class="stat-card s-green"><div class="stat-icon si-green">✅</div><div class="stat-info"><div class="stat-val" id="st-conf">—</div><div class="stat-lbl">Confirmed</div></div></div>
+    <div class="stat-card s-red"><div class="stat-icon si-red">❌</div><div class="stat-info"><div class="stat-val" id="st-canc">—</div><div class="stat-lbl">Cancelled</div></div></div>
+    <div class="stat-card s-orange"><div class="stat-icon si-orange">💰</div><div class="stat-info"><div class="stat-val" id="st-spent">—</div><div class="stat-lbl">Total Spent</div></div></div>
+  </div>
+
+  <!-- Quick Search -->
+  <div class="card mb-3">
+    <div class="card-title" style="margin-bottom:1rem">🔍 Quick Search</div>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>From</label><input type="text" id="qFrom" placeholder="e.g. Mumbai" list="qcl"><datalist id="qcl"><option value="Mumbai"><option value="Delhi"><option value="Bangalore"><option value="Chennai"><option value="Hyderabad"><option value="Pune"><option value="Goa"></datalist></div>
+      <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>To</label><input type="text" id="qTo" placeholder="e.g. Delhi" list="qcl2"><datalist id="qcl2"><option value="Mumbai"><option value="Delhi"><option value="Bangalore"><option value="Chennai"><option value="Hyderabad"><option value="Pune"><option value="Goa"></datalist></div>
+      <div class="form-group" style="margin:0"><label>Type</label><select id="qType"><option value="bus">🚌 Bus</option><option value="flight">✈️ Flight</option><option value="train">🚂 Train</option><option value="car">🚗 Car</option><option value="auto">🛺 Auto</option><option value="bike">🏍️ Bike</option></select></div>
+      <div class="form-group" style="margin:0"><label>Date</label><input type="date" id="qDate"></div>
+      <button class="btn btn-primary" style="align-self:flex-end;height:44px" onclick="quickSearch()">Search →</button>
+    </div>
+  </div>
+
+  <!-- Recent Bookings -->
+  <div class="table-wrap">
+    <div class="table-head">
+      <h3>📋 Recent Bookings</h3>
+      <a href="/my-bookings" class="btn btn-ghost btn-sm">View All →</a>
+    </div>
+    <div id="recentBkContainer">
+      <div class="loading-center"><div class="spinner"></div><p>Loading…</p></div>
+    </div>
+  </div>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="../js/utils.js"></script>
+<script>
+const user = requireLogin();
+document.getElementById('welcomeMsg').textContent = 'Welcome back, ' + user.name.split(' ')[0] + '! 👋';
+document.getElementById('userGreeting').textContent = user.name;
+document.getElementById('userGreeting').style.display='';
+document.getElementById('logoutBtn').style.display='';
+document.getElementById('qDate').min = new Date().toISOString().split('T')[0];
+
+async function loadDashboard() {
+  const r = await apiFetch('/api/bookings/my-bookings');
+  if(!r.success) return;
+  const bks = r.bookings;
+  const conf  = bks.filter(b=>b.bookingStatus==='confirmed').length;
+  const canc  = bks.filter(b=>b.bookingStatus==='cancelled').length;
+  const spent = bks.filter(b=>b.paymentStatus==='paid').reduce((s,b)=>s+b.finalAmount,0);
+  document.getElementById('st-total').textContent = bks.length;
+  document.getElementById('st-conf').textContent  = conf;
+  document.getElementById('st-canc').textContent  = canc;
+  document.getElementById('st-spent').textContent = fmtMoney(spent);
+
+  const recent = bks.slice(0,5);
+  const cont = document.getElementById('recentBkContainer');
+  if(!recent.length) { cont.innerHTML='<div class="empty-state"><div class="e-icon">🎫</div><h3>No bookings yet</h3><p>Search and book your first journey!</p></div>'; return; }
+  cont.innerHTML = `<table><thead><tr><th>Booking ID</th><th>Route</th><th>Type</th><th>Date</th><th>Amount</th><th>Payment</th><th>Status</th></tr></thead><tbody>
+    ${recent.map(b=>`<tr>
+      <td><span style="color:var(--accent);font-weight:700;font-size:.82rem">${b.bookingId}</span></td>
+      <td><strong>${b.from}</strong> → <strong>${b.to}</strong></td>
+      <td>${TICON[b.transportType]||''} ${b.transportType}</td>
+      <td>${fmtDate(b.journeyDate)}</td>
+      <td style="color:var(--accent);font-weight:700">${fmtMoney(b.finalAmount)}</td>
+      <td>${badge(b.paymentStatus)}</td>
+      <td>${badge(b.bookingStatus)}</td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+
+function quickSearch() {
+  const f=document.getElementById('qFrom').value.trim(), t=document.getElementById('qTo').value.trim(), tp=document.getElementById('qType').value, d=document.getElementById('qDate').value;
+  if(!f||!t){toast('Enter from and to','error');return;}
+  window.location.href=`/book?type=${tp}&from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}&date=${d}`;
+}
+
+loadDashboard();
+</script>
+</body></html>

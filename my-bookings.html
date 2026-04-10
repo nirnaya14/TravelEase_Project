@@ -1,0 +1,146 @@
+<!DOCTYPE html><html lang="en"><head>
+<!--
+  PROMPT USED TO GENERATE THIS PAGE:
+  Build my-bookings.html for TravelEase. requireLogin() guard. Show "Hi, {firstName}" in navbar.
+  Page header: "My Bookings" title, subtitle, two filter selects (filterStatus: All/confirmed/pending/cancelled/completed, filterType: All/bus/flight/train/car) both onchange→filterBookings().
+  Stats row (#bkStats, hidden initially, display:grid after data loads): Total (stTotal), Confirmed (stConf), Cancelled (stCanc), Total Spent (stSpent).
+  loadBookings(): fetch GET /api/bookings/my-bookings, store in allBookings, compute stats from bookingStatus/paymentStatus fields, show bkStats, call filterBookings().
+  filterBookings(): filter allBookings by filterStatus.value (bookingStatus) and filterType.value (transportType), call renderBookings(filtered).
+  renderBookings(bks): for each booking render .booking-card with:
+    - Header: .rc-type-icon (TCOLOR[transportType]), bookingId (.bc-id), PNR text, payment badge + booking status badge, Cancel button if bookingStatus=confirmed.
+    - .bc-grid: Route, Transport name, Journey Date, Timing (dep→arr), Passengers, Seat Class, Seats (passengers[].seatNumber joined), Amount Paid (accent bold), Booked On.
+  cancelBooking(id): confirm dialog, PUT apiFetch('/api/bookings/'+id+'/cancel'), on success toast + reload.
+  Empty state: 🎫 icon + "No bookings found" + Search Transports button.
+-->
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>My Bookings — TravelEase</title>
+<link rel="stylesheet" href="../styles/main.css">
+</head><body>
+<nav class="navbar">
+  <div class="logo" onclick="location.href='/'">✈️ Travel<span>Ease</span></div>
+  <div class="nav-links">
+    <a href="/">Home</a>
+    <a href="/my-bookings" class="active">My Bookings</a>
+    <a href="/dashboard">Dashboard</a>
+    <span id="userGreeting" style="color:var(--text2);font-size:.82rem;"></span>
+    <button onclick="logout()" class="btn btn-ghost btn-sm">Logout</button>
+  </div>
+</nav>
+<div class="page-body">
+<div class="page-inner">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.75rem">
+    <div>
+      <h2 style="font-size:1.4rem;font-weight:800">My Bookings</h2>
+      <p style="color:var(--text2);font-size:.85rem">All your travel bookings in one place</p>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <select id="filterStatus" onchange="filterBookings()" style="padding:.45rem .8rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-size:.82rem">
+        <option value="">All Status</option>
+        <option value="confirmed">Confirmed</option>
+        <option value="pending">Pending</option>
+        <option value="cancelled">Cancelled</option>
+        <option value="completed">Completed</option>
+      </select>
+      <select id="filterType" onchange="filterBookings()" style="padding:.45rem .8rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-size:.82rem">
+        <option value="">All Types</option>
+        <option value="bus">Bus</option>
+        <option value="flight">Flight</option>
+        <option value="train">Train</option>
+        <option value="car">Car</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Stats row (horizontal columns) -->
+  <div class="stats-row" id="bkStats" style="display:none">
+    <div class="stat-card s-purple"><div class="stat-icon si-purple">🎫</div><div class="stat-info"><div class="stat-val" id="stTotal">0</div><div class="stat-lbl">Total</div></div></div>
+    <div class="stat-card s-green"><div class="stat-icon si-green">✅</div><div class="stat-info"><div class="stat-val" id="stConf">0</div><div class="stat-lbl">Confirmed</div></div></div>
+    <div class="stat-card s-red"><div class="stat-icon si-red">❌</div><div class="stat-info"><div class="stat-val" id="stCanc">0</div><div class="stat-lbl">Cancelled</div></div></div>
+    <div class="stat-card s-orange"><div class="stat-icon si-orange">💰</div><div class="stat-info"><div class="stat-val" id="stSpent">₹0</div><div class="stat-lbl">Total Spent</div></div></div>
+  </div>
+
+  <div id="bookingsContainer">
+    <div class="loading-center"><div class="spinner"></div><p>Loading bookings…</p></div>
+  </div>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="../js/utils.js"></script>
+<script>
+const user = requireLogin();
+document.getElementById('userGreeting').textContent = 'Hi, ' + user.name.split(' ')[0];
+let allBookings = [];
+
+async function loadBookings() {
+  const r = await apiFetch('/api/bookings/my-bookings');
+  if(!r.success){toast('Failed to load','error');return;}
+  allBookings = r.bookings;
+
+  // Stats
+  const conf  = allBookings.filter(b=>b.bookingStatus==='confirmed').length;
+  const canc  = allBookings.filter(b=>b.bookingStatus==='cancelled').length;
+  const spent = allBookings.filter(b=>b.paymentStatus==='paid').reduce((s,b)=>s+b.finalAmount,0);
+  document.getElementById('stTotal').textContent = allBookings.length;
+  document.getElementById('stConf').textContent  = conf;
+  document.getElementById('stCanc').textContent  = canc;
+  document.getElementById('stSpent').textContent = fmtMoney(spent);
+  if(allBookings.length) document.getElementById('bkStats').style.display='grid';
+
+  filterBookings();
+}
+
+function filterBookings() {
+  const st = document.getElementById('filterStatus').value;
+  const tp = document.getElementById('filterType').value;
+  let bks = allBookings;
+  if(st) bks = bks.filter(b=>b.bookingStatus===st);
+  if(tp) bks = bks.filter(b=>b.transportType===tp);
+  renderBookings(bks);
+}
+
+function renderBookings(bks) {
+  const cont = document.getElementById('bookingsContainer');
+  if(!bks.length) {
+    cont.innerHTML='<div class="empty-state"><div class="e-icon">🎫</div><h3>No bookings found</h3><p>Book a journey to see it here!</p><br><a href="/" class="btn btn-primary">Search Transports</a></div>';
+    return;
+  }
+  cont.innerHTML = bks.map(b => `
+  <div class="booking-card">
+    <div class="bc-header">
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <div class="rc-type-icon ${TCOLOR[b.transportType]}" style="width:40px;height:40px;border-radius:10px;font-size:1.1rem">${TICON[b.transportType]}</div>
+        <div>
+          <div class="bc-id">${b.bookingId}</div>
+          <div style="font-size:.75rem;color:var(--text3)">PNR: ${b.pnr}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        ${badge(b.paymentStatus)}
+        ${badge(b.bookingStatus)}
+        ${b.bookingStatus==='confirmed'?`<button class="btn btn-red btn-xs" onclick="cancelBooking('${b._id}')">Cancel</button>`:''}
+      </div>
+    </div>
+    <div class="bc-grid">
+      <div class="bc-field"><label>Route</label><span>${b.from} → ${b.to}</span></div>
+      <div class="bc-field"><label>Transport</label><span>${b.transportName}</span></div>
+      <div class="bc-field"><label>Journey Date</label><span>${fmtDate(b.journeyDate)}</span></div>
+      <div class="bc-field"><label>Timing</label><span>${b.departureTime||'—'} → ${b.arrivalTime||'—'}</span></div>
+      <div class="bc-field"><label>Passengers</label><span>${b.totalPassengers}</span></div>
+      <div class="bc-field"><label>Seat Class</label><span>${b.seatClass||'Economy'}</span></div>
+      <div class="bc-field"><label>Seats</label><span>${b.passengers&&b.passengers.length?b.passengers.map(p=>p.seatNumber).join(', '):'—'}</span></div>
+      <div class="bc-field"><label>Amount Paid</label><span style="color:var(--accent);font-weight:700">${fmtMoney(b.finalAmount)}</span></div>
+      <div class="bc-field"><label>Booked On</label><span>${fmtDate(b.createdAt)}</span></div>
+    </div>
+  </div>`).join('');
+}
+
+async function cancelBooking(id) {
+  if(!confirm('Cancel this booking? This cannot be undone.')) return;
+  const r = await apiFetch('/api/bookings/'+id+'/cancel','PUT');
+  if(r.success){toast('Booking cancelled','info');loadBookings();}
+  else toast(r.message||'Failed','error');
+}
+
+loadBookings();
+</script>
+</body></html>
