@@ -1,5 +1,5 @@
 # 🚀 TravelEase — Transport Booking System
-**Full Stack Final Year Project | Node.js + Express + MongoDB + Vanilla JS**
+** Node.js + Express + MongoDB + Vanilla JS**
 
 ---
 
